@@ -50,7 +50,7 @@ root directory as `$APOLLO_ROOT_DIR`
 
 ## Start Apollo Development Docker Container
 
-From the `${APOLLO_ROOT_DIR}` directory, type
+From the `${APOLLO_ROOT_DIR}` directory, type chmod 777 /var/run/docker.sock then
 
 ```bash
 bash docker/scripts/dev_start.sh
