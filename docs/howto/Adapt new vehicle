@@ -1,0 +1,867 @@
+Apollo vehicle adaptation tutorial
+introduction
+The Apollo new car adaptation method introduced in this article can help developers quickly access new vehicles, so that developers can develop software on Apollo. The vehicle wire control signal standards and requirements introduced in the article are derived from the Apollo open vehicle certification platform. At present, the vehicle certification platform already has Lincoln, Lexus, GE3, WEY and other models. Car companies and vehicles that are willing to add their cars to the Apollo vehicle certification platform Providers can follow the specific requirements of the wire control in the document, familiarize and prepare the underlying vehicle control protocol, and save the preparation time. Interested developers are welcome to move to the Apollo open vehicle certification platform ( http://apollo.auto/ vehicle/certificate_cn.html ) for more details.
+
+Fit a vehicle that meets the Apollo standard
+This article mainly introduces how to add a new car that meets the Apollo standard in Apollo, so that developers can design a chassis system that meets Apollo's wire control requirements, develop chassis adaptation codes that adapt to Apollo software, and build the ability to quickly access Apollo software.
+When adapting the CAN communication of a new car, the developer first needs to design and complete the chassis communication protocol that meets the Apollo wire control requirements. This part is to build a DBC file of the vehicle chassis signal according to the Apollo wire control list, and design the chassis-related interface definitions, Messages and signals correspond to DBC one-to-one. After completing the DBC file design, according to the DBC conversion code tool provided by Apollo, the first version of the canbus bottom layer adaptation code is obtained, and then the control logic of the relevant vehicle is added, and the chassis signal and control vehicle signal of the vehicle bottom layer are built in Apollo. Finally, signal debugging and verification is carried out through the canbus debugging tool to ensure that the vehicle's chassis signal communicates with the upper layer of Apollo without any problems.
+1. Vehicles that meet the Apollo wire control standard
+Vehicle DBC
+To develop a vehicle equipped with the Apollo system, the first task is to establish the communication between Apollo and the bottom layer of the vehicle. The entire vehicle is carried out between various controllers (ECU, electronic control units) through CAN bus (CAN bus, Controller Area Network) Therefore, when the Apollo control system is connected to the vehicle system, it also controls the vehicle through CAN bus communication. Vehicles need to open a part of the chassis signals, and configure these signals into DBC files that meet the requirements of Apollo's wire control standards (Database file, is a special file used to describe data on the CAN bus, which can facilitate users to quickly build a vehicle CAN communication network The structure defines the relevant information such as signals and messages on the CAN bus). It is recommended that developers use CANdb++ of the canoe software to edit the generated files. Apollo software processes the chassis DBC files to generate chassis adaptation code templates. Developers can adapt the open chassis signals of the vehicle to the Apollo software through simple programming and development. , To realize the communication between Apollo and the vehicle chassis.
+
+Detailed explanation of DBC wire control standard
+When developing vehicle chassis control signals, developers need to refer to the vehicle-by-wire control standards published by the Apollo official website vehicle certification platform ( http://apollo.auto/docs/procedure_cn.html) . Passenger car standards: http://apollo- homepage.bj.bcebos.com/Apollo_by_wire_requirement.xlsx ; Mini car standard: https://apollohomepage.bj.bcebos.com/Apollo_by_wire_requirement_micro_car.xlsx The vehicle wire control standard specifies the requirements of the vehicle chassis signal and also specifies the control of each frame The response time of the signal in the chassis is required. The vehicle chassis signal not only needs to meet the requirements in function, but also needs to meet the control requirements in performance, so as to meet the vehicle control chassis that meets the Apollo wire control standard.
+Developers should refer to the vehicle-by-wire standard to meet the performance requirements of the control when transforming the vehicle chassis into a wire-controlled chassis. For example, the steering signal requires a response time within 100ms, and the maximum overshoot meets specific requirements. Developers are requested to carefully read the performance requirements in the remote control list. When Apollo vehicles are certified, the performance of the chassis will also be tested accordingly.
+In the actual development of DBC, the details of each signal definition also have specific requirements. In order to save developer time and improve the efficiency of vehicle certification, developers need to focus on understanding and paying attention to each signal. The following are the requirements of Apollo for vehicle chassis signals as shown in the following table: apollo_by_wire_requirement1 apollo_by_wire_requirement2 apollo_by_wire_requirement3
+
+The vehicle's chassis control is the basis of Apollo's communication with the chassis, and every control signal needs to be reliable and accurate. Manual takeover and cross-border handling are to ensure that it is taken over at any time during testing and use, and to ensure driving safety in the event of an emergency. In addition to the detailed signal requirements in the wire control list, developers also need to pay special attention to the independence of horizontal and vertical enable signals , chassis takeover logic and other special requirements . The special requirements for signal functions are described in detail below.
+
+Steer by wire
+Turn enable signal
+(1) The steering enable signal is to control the vehicle to enter or exit the steering automatic driving mode. The enable signal must be a signal triggered by the rising edge . The enable signal is in principle one signal; some developers have different signals at the same time In order to enable the steering to enter the automatic driving state, the developer needs to integrate the logic control of the relevant enable signal at the bottom layer. In principle, there must be only one enable signal for Apollo.
+
+(2) The steering automatic driving mode must be independent, and the enable signal must be independent, and not related to the enable signals of other longitudinal modules (such as drive, brake, gear, parking, etc.). It needs to meet: separate enable to enter the steering In automatic driving mode, the longitudinal driving mode does not change, and the steering wheel angle or speed control signal is issued, and the vehicle can respond to the corresponding turning angle and speed; independent enable to exit the steering automatic driving mode, and the longitudinal driving mode does not change. The vehicle does not respond when the steering wheel angle or speed control signal is sent;
+
+(3) If the lateral direction is taken over, when entering the automatic driving mode again, it is necessary to enter the automatic driving through the rising edge trigger signal.
+
+Steering control signal
+Target steering wheel angle: the signal to control the steering wheel angle, the unit is degree (deg), control the steering wheel (counterclockwise) to turn left as a positive value, and control the steering wheel (clockwise) to turn to the right as a negative value.
+
+Target steering wheel speed: Most vehicles cannot open the secondary control signal interface. It is recommended to set the steering wheel speed to the maximum value to improve the system response time.
+
+Steering feedback signal
+The actual steering wheel angle feedback: feedback the actual steering wheel angle, the feedback is required to be accurate, the left turn feedback is a positive value, and the right turn feedback is a negative value.
+
+Steering driving mode feedback: feedback the current steering driving mode of the vehicle, at least 3 modes are required: automatic driving mode, manual driving mode, and manual takeover mode.
+
+Fault information feedback: feedback whether there is a fault in the steering control system.
+
+Manual takeover processing
+(1) For passenger cars/commercial vehicles, when the artificially applied steering wheel torque is greater than its takeover threshold, each module of the vehicle exits automatic driving, and the steering driving mode feedback is taken over; for chassis cars, etc., when the car chassis receives When the remote control controls the steering command of the vehicle, each module of the vehicle exits the automatic driving; the steering needs to be independent, at this time the steering driving mode feedback is manually taken over, and the driving driving mode and braking driving mode should be fed back to the manual driving mode at this time;
+
+(2) When steering automatic driving is taken over manually, all modules exit the automatic driving mode.
+
+Cross-border processing
+The principle of transboundary processing is to refuse to execute the transboundary and exit the autopilot mode. When Apollo issued a control command that exceeds the defined range of the original control command, it is called out of bounds at this time. When a crossover occurs, the steering needs to exit the autopilot mode. For example, if the maximum range of the target steering wheel angle is defined as -500deg~500deg, if the angle command issued by Apollo is not in this range, the chassis needs to refuse to execute this out-of-bounds and exit the autopilot mode.
+
+Wire drive
+Drive enable:
+(1) The driving enable signal is to control the vehicle to enter or exit the driving automatic driving mode. The enable signal must be a signal triggered by the rising edge . In principle , the enable signal is one signal ; if some developers have different signals at the same time In order to enable the steering to enter the automatic driving state, the developer needs to integrate the logic control of the relevant enable signal at the bottom layer. In principle, there must be only one enable signal for Apollo.
+
+(2) The drive enable signal must be independent and not related to the steering module enable signal. It needs to meet: separate enable to enter the longitudinal automatic driving mode, the steering driving mode does not change, the driving control signal is issued, and the vehicle can respond Corresponding control commands; enable to exit the driving automatic driving mode alone, the driving mode of the steering does not change, the driving control signal is issued, and the vehicle does not respond;
+
+(3) In principle, the drive enable signal and brake, gear, and parking enable are independent of each other. According to previous practical experience , some vehicles have longitudinal drive and brake enable signals classified as one signal. Such special circumstances require development. Please pay extra attention to ensure that the vertical enable must be separated and independent from the horizontal enable. If the vertical modules are related to each other, the enablement requires driving, braking, gear, and parking to enter the automatic driving mode together. Exit the autopilot mode.
+
+(4) If the lateral direction is taken over, when entering the automatic driving mode again, it is necessary to enter the automatic driving through the rising edge trigger signal.
+
+Drive control signal:
+Target accelerator pedal position: The control amount is the percentage of the accelerator pedal position, ranging from 0 to 100%, 100% represents the accelerator pedal to the maximum position.
+
+Vehicle target longitudinal acceleration and vehicle target drive torque are optional vehicle control signals.
+
+Drive feedback signal:
+Driving mode: feedback the current driving driving mode of the vehicle. At least 3 modes are required: automatic driving mode, manual driving mode, and manual takeover mode.
+
+Accelerator pedal position: It is necessary to accurately feedback the actual pedal position of the current vehicle.
+
+Longitudinal acceleration: The current longitudinal acceleration of the vehicle needs to be accurately fed back.
+
+Vehicle speed: It is necessary to accurately feedback the current vehicle speed. The vehicle speed required by Apollo is m/s. Generally, the vehicle speed feedback unit is km/h. In this case, the unit conversion needs to be performed separately after the DBC is converted to the adaptation code .
+
+Wheel speed: For passenger cars, the relevant wheel speed signal must be provided, the size of the wheel speed, in km/h. If possible, feedback on the direction of the wheel movement can be provided, and the Value Description is in the following order 0x00，FORWARD；0x01，BACKWARD；0x02，STANDSTILL；0x03，INVALID.
+
+Engine/motor speed: Need to accurately feedback the current engine or motor speed, in r/min.
+
+Fault information: feedback whether there is a fault in the drive system.
+
+Manual takeover:
+(1) When the vehicle chassis receives a manual intervention accelerator pedal command (or for a chassis car, it receives an acceleration signal from the remote control), each module of the vehicle exits automatic driving. Steering takeover needs to be independent. At this time, the driving driving mode feedback is manually taken over. At this time, the steering driving mode and brake driving mode should be fed back to the manual driving mode;
+
+(2) When driving automatic driving is taken over manually, all modules exit the automatic driving mode.
+
+Cross-border processing
+When a crossover occurs, the steering needs to exit the autopilot mode. For example, if the target accelerator pedal position range is defined as 0~100%, if the control pedal command issued by Apollo is not in this range, the chassis needs to refuse to execute this out-of-bounds and exit the autopilot mode.
+
+Bbw
+Brake enable:
+(1) The brake enable signal is to control the vehicle to enter or exit the driving automatic driving mode. The enable signal must be a signal triggered by the rising edge . The enable signal is in principle one signal; some developers have different signals. At the same time, to enable the steering to enter the automatic driving state, the developer needs to integrate the logic control of the relevant enable signal at the bottom layer. In principle, there must be only one enable signal for Apollo.
+
+(2) The brake enable signal must be independent and cannot be associated with the steering module enable signal. It needs to meet: enable it to enter the longitudinal automatic driving mode, the steering driving mode does not change, the brake control signal is issued, and the vehicle Able to respond to corresponding control commands; enable to exit the drive automatic driving mode alone, the steering driving mode does not change, and the brake control signal is issued, and the vehicle does not respond;
+
+(3) In principle, the drive enable signal and the drive, gear, and parking enable are independent of each other. According to past practical experience, some vehicles have longitudinal drive and brake enable signals as one signal. This special situation requires additional attention from developers to ensure that the longitudinal enable must be separated and independent from the horizontal enable. Each module in the longitudinal direction If they are related to each other, enabling requires driving, braking, gear, and parking to enter the automatic driving mode together, and disabling them to exit the automatic driving mode together.
+
+(4) If the lateral direction is taken over, when entering the automatic driving mode again, it is necessary to enter the automatic driving through the rising edge trigger signal.
+
+Brake control signal
+Brake pedal target position: The control amount is the percentage of the accelerator pedal position, ranging from 0 to 100%, 100% represents the maximum position of the brake pedal.
+
+Target deceleration: optional, the control amount is the target deceleration of the vehicle.
+
+Brake light control: an option to control whether the brake light is on or not. Generally, the chassis of the vehicle will light up the brake light by default when braking.
+
+Brake feedback signal
+Driving mode: feedback the current braking driving mode of the vehicle, at least 3 modes are required: automatic driving mode, manual driving mode, and manual takeover mode.
+
+Brake pedal position: brake pedal position, percentage.
+
+Brake light status: feedback whether the brake light is on.
+
+Fault information: feedback whether the brake system is faulty.
+
+Manual takeover
+(1) When the vehicle chassis receives the manual intervention of the brake pedal command (or for the chassis car, receives the deceleration signal from the remote control), the various modules of the vehicle exit automatic driving. Steering takeover needs to be independent. At this time, the driving driving mode feedback is manually taken over. At this time, the steering driving mode and brake driving mode should be fed back to the manual driving mode;
+
+(2) When driving automatic driving is taken over manually, all modules exit the automatic driving mode.
+
+Cross-border processing
+When a crossover occurs, the steering needs to exit the autopilot mode. For example, if the target brake pedal position range is defined as 0~100%, if the control pedal command issued by Apollo is not in this range, the chassis needs to refuse to execute this out-of-bounds and make all modes exit the autopilot mode.
+
+Wire control gear
+Gear enable
+Enable independence, not associated with horizontal control. It can be associated with the vertical enable signal, or it can be enabled independently. The gear enable signal must be a signal triggered by the rising edge, and the enable signal is in principle one signal.
+
+Gear control
+Shift control signal, the signal must shift in the following order: 0x00：N档；0x01：D；0x02：R；0x03：P；0x04：NONE. The surplus need not be increased.
+
+Gear feedback
+Shift information: current gear position feedback signal, the feedback control range consistent with the sequence of the signal sequence: 0x00：N档；0x01：D；0x02：R；0x03：P；0x04：NONE. The surplus need not be increased.
+
+Fault information: feedback whether there is a fault in the shifting system.
+
+Parking by wire
+Parking enable
+Enable independence, not associated with horizontal control. It can be associated with the vertical enable signal, or it can be enabled independently. The parking enable signal must be a signal triggered by the rising edge, and the enable signal is in principle one signal.
+
+Parking control
+The parking signal is valid, the electronic handbrake is locked, and the vehicle is parked; the parking signal is invalid, the electronic handbrake is released, and the vehicle is not parked.
+
+Parking feedback
+EPB switch status: feedback whether the current electronic handbrake is locked or released.
+
+Parking status feedback: feedback whether the current parking is in automatic driving mode or manual control mode. At least 2 自动驾驶模式modes: 手动驾驶模式, 被人工接管模式, .
+
+Parking system fault feedback: feedback parking system faults.
+
+Other body functions
+Including wire-controlled lights, which mainly control the turning on and off of the far and near beams, turn signals, and hazard warning lights, with corresponding status feedback signals.
+
+There are wiper and horn controls as an option.
+
+Vehicle VIN code
+The VIN code is generally 17 bits. According to the ASCII code format, each ASCII occupies 1 byte and requires 3 frames of messages to be sent continuously, but the VIN code does not need to be updated in real time, so when the system requests to enter the automatic driving, the VIN code is sent through the CAN bus , And keep the value no longer updated, which can also reduce the load on the bus.
+
+DBC file requirements
+Familiar with the above-mentioned Apollo requirements for vehicle chassis signals, the second step is to edit the vehicle chassis signal database (DBC) file, set the communication network structure, the initial value of each signal, symbol type, accuracy, size range, and value And so on, and then combined into the corresponding CAN communication message (message) to communicate with Apollo. Next, use CANdb++ software to edit DBC files, which has a better visual interface. This software is currently only applicable to Windows systems.
+
+Because the DBC file will convert the message and signal defined by the chassis into C++ program code according to Apollo's translation script tool, when editing the DBC, it is necessary to define the name of the signal, comment, and assign it. It conforms to the C++ language definition specification, so as to ensure that the CANBUS communication cannot be transferred due to the DBC file problem during the later debugging. According to Apollo code requirements, we have summarized the following considerations:
+
+1. The recommended name of the control signal is ACU
+When defining the name of the ECU on the network, it is recommended to define the name of the controller on the Apollo side as ACU (Apollo Control Unit).
+
+name
+
+2. It is recommended that the CAN signal ID is not greater than 2048
+At present, it is recommended to use the standard frame format (CAN Standard 2.0) for CAN communication in passenger cars, and Apollo can support extended frames.
+
+ID
+
+3. The comment cannot have carriage return and line feed, and the comment (comment) must be in English
+If each frame of message (message) has a comment, there should be no line breaks in the comment. Chinese cannot be written, and it must be in English format.
+
+comment
+
+4. VAL_ (enumeration value) (Value Description) needs to be in English and cannot have the same defined name. It must be a letter or a combination of letters and numbers, and cannot have symbols.
+For most of the state feedback signals and control signals, such as gear feedback, driving mode feedback, etc., the signal needs to be defined, which is defined in the Value Description item of the signal definition. The defined name must follow the C++ naming convention, and English is required. And they cannot have the same defined name, they must be letters or a combination of letters and numbers, and they cannot have symbols. The following figure shows the Value Description definition of the gear feedback signal.
+
+gear1
+
+5. In the feedback signal and control signal, such as vehicle speed, wheel speed, acceleration, pedal position (percentage) and other double type feedback and control signals, the Value Description item in DBC must be empty.
+For real-time numerical feedback signals and numerical control signals, such as vehicle speed (actual vehicle speed), wheel speed feedback (actual wheel speed), pedal control (percentage), angle control (actual angle value), etc., such signals are defined in the Value Description item No content can be added.
+
+val
+
+6. For the range of the steering signal, fill in the accurate value range when defining it. Note that the accuracy of the control angle is generally not higher than 0.05deg, and the pedal percentage accuracy (factor) is not higher than 0.1.
+For the Byte Order of all messages, the signals in a DBC can only be defined uniformly, all in Motorola format or all in Intel format.
+
+define
+
+Two, adapt CANBUS code
+1. Convert DBC file into canbus template code
+The Canbus adaptation code can be generated using apollo tools. Before converting the code, ensure that the DBC is completed in accordance with the above-mentioned DBC file requirements, and open the dbc file through gedit, save and transcode as UTF-8 format.
+
+(1) Place the DBC file in the designated directory, in the directory apollo/modules/tools/gen_vehicle_protocol.
+
+(2) Modify the configuration file of the DBC conversion script: The following takes the addition of the GE3 model as an example. In the apollo/modules/tools/gen_vehicle_protocoldirectory, copy the default mkz_conf.ymlfile and rename it to ge3_conf.ymlmodify the configuration file, as shown in the following figure:
+
+yml
+
+dbc_file：Fill in the name of the DBC file corresponding to yours. The name of the DBC file is usually named after the model name and .dbcends with;
+
+protocol_conf: The name is the same as the above DBC file name, fill in ge3.yml;
+
+car_type: Fill in the model name;
+
+sender_list：[ ] : Send list, here is empty by default;
+
+sender: Modified here to be consistent with the name of Apollo defined in DBC, and the name of Apollo defined in DBC of ge3 is SCU.
+
+(3) Complete the ge3_conf.ymlconfiguration file settings, start docker, enter the Apollo container apollo/modules/tools/gen_vehicle_protocol, find the DBC conversion tool in the directory, gen.pyand execute the code:
+
+cd modules/tools/gen_vehicle_protocol
+python gen.py ge3_conf.ymal
+After executing the above script, it will show that 5 control protocols have been generated and 11 feedback protocols have been generated in the terminal. creat_ge3protocol At this time, under the apollo/modules/tools/gen_vehicle_protocoldirectory, a outputfolder will be generated , there are 2 folders in the folder, one is a protofolder, the other is a vehiclefolder; the code content in these two files is the basic code template we want to adapt to canbus . We need to copy the code in the file to the canbus layer of apollo for code adaptation and addition. output
+
+Note : After copying the code template generated in this output folder to the corresponding apollo directory, you must delete the folder. If you do not delete the folder, an error will be reported when compiling apollo later. This folder has protection permissions, please execute the delete code in apollo's docker:
+
+rm -rf output/
+2. The adaptation code is incorporated into the apollo file
+Let's take the example of adding a ge3 model, and add the code to apollo: output
+
+(1) A apollo/modules/tools/gen_vehicle_protocol/output/protofolder ge3.protofiles are copied to apollo/modules/canbus/protothe folder, and the folder in chassis_detail.proto modified file, add the file header in the header file import "modules/canbus/proto/ge3.proto" importproto in the message ChassisDetail{}added new models to be added last line defined variable structures in the body: Ge3 ge3 = 21; ge3_chassis_detail in pollo/modules/canbus/protodirectory BUILDis added within the above-mentioned new file protodependency: "ge3.proto"; BUILD_depend (2) the apollo/modules/tools/gen_vehicle_protocol/output/vehicle/ge3 copied to the folder within the apollo/modules/canbus/vehicle/folder; copy_ge3
+
+3. Realize new vehicle control logic
+To realize the new vehicle control logic, apollo/modules/canbus/vehicle/ge3/ge3_controller.ccwrite the control logic code in the file, which mainly contains the information of the parsed chassis feedback message, chassisand chassis_detailbroadcasts the vehicle chassis information through and broadcast. chassisIt mainly includes obtaining the vehicle speed, wheel speed, engine speed, pedal feedback, corner feedback and other information of the chassis, which chassis_detailis the actual information of each frame of message. The code written in this part is as follows:
+
+  // 3
+  chassis_.set_engine_started(true);
+
+  // check if there is not ge3, no chassis detail can be retrieved and return
+  if (!chassis_detail.has_ge3()) {
+    AERROR << "NO GE3 chassis information!";
+    return chassis_;
+  }
+  Ge3 ge3 = chassis_detail.ge3();
+  // 5
+  if (ge3.has_scu_bcs_3_308()) {
+    Scu_bcs_3_308 scu_bcs_3_308 = ge3.scu_bcs_3_308();
+    if (scu_bcs_3_308.has_bcs_rrwheelspd()) {
+      if (chassis_.has_wheel_speed()) {
+        chassis_.mutable_wheel_speed()->set_is_wheel_spd_rr_valid(
+            scu_bcs_3_308.bcs_rrwheelspdvd());
+        chassis_.mutable_wheel_speed()->set_wheel_direction_rr(
+            (WheelSpeed::WheelSpeedType)scu_bcs_3_308.bcs_rrwheeldirection());
+        chassis_.mutable_wheel_speed()->set_wheel_spd_rr(
+            scu_bcs_3_308.bcs_rrwheelspd());
+      }
+    }
+
+    if (scu_bcs_3_308.has_bcs_rlwheelspd()) {
+      if (chassis_.has_wheel_speed()) {
+        chassis_.mutable_wheel_speed()->set_is_wheel_spd_rl_valid(
+            scu_bcs_3_308.bcs_rlwheelspdvd());
+        chassis_.mutable_wheel_speed()->set_wheel_direction_rl(
+            (WheelSpeed::WheelSpeedType)scu_bcs_3_308.bcs_rlwheeldirection());
+        chassis_.mutable_wheel_speed()->set_wheel_spd_rl(
+            scu_bcs_3_308.bcs_rlwheelspd());
+      }
+    }
+
+    if (scu_bcs_3_308.has_bcs_frwheelspd()) {
+      if (chassis_.has_wheel_speed()) {
+        chassis_.mutable_wheel_speed()->set_is_wheel_spd_fr_valid(
+            scu_bcs_3_308.bcs_frwheelspdvd());
+        chassis_.mutable_wheel_speed()->set_wheel_direction_fr(
+            (WheelSpeed::WheelSpeedType)scu_bcs_3_308.bcs_frwheeldirection());
+        chassis_.mutable_wheel_speed()->set_wheel_spd_fr(
+            scu_bcs_3_308.bcs_frwheelspd());
+      }
+    }
+
+    if (scu_bcs_3_308.has_bcs_flwheelspd()) {
+      if (chassis_.has_wheel_speed()) {
+        chassis_.mutable_wheel_speed()->set_is_wheel_spd_fl_valid(
+            scu_bcs_3_308.bcs_flwheelspdvd());
+        chassis_.mutable_wheel_speed()->set_wheel_direction_fl(
+            (WheelSpeed::WheelSpeedType)scu_bcs_3_308.bcs_flwheeldirection());
+        chassis_.mutable_wheel_speed()->set_wheel_spd_fl(
+            scu_bcs_3_308.bcs_flwheelspd());
+      }
+    }
+  }
+
+  if (ge3.has_scu_bcs_2_307() && ge3.scu_bcs_2_307().has_bcs_vehspd()) {
+    chassis_.set_speed_mps(
+        static_cast<float>(ge3.scu_bcs_2_307().bcs_vehspd()));
+  } else {
+    chassis_.set_speed_mps(0);
+  }
+
+  // 7
+  // ge3 only has fuel percentage
+  // to avoid confusing, just don't set
+  chassis_.set_fuel_range_m(0);
+
+  if (ge3.has_scu_vcu_1_312() && ge3.scu_vcu_1_312().has_vcu_accpedact()) {
+    chassis_.set_throttle_percentage(
+        static_cast<float>(ge3.scu_vcu_1_312().vcu_accpedact()));
+  } else {
+    chassis_.set_throttle_percentage(0);
+  }
+  // 9
+  if (ge3.has_scu_bcs_1_306() && ge3.scu_bcs_1_306().has_bcs_brkpedact()) {
+    chassis_.set_brake_percentage(
+        static_cast<float>(ge3.scu_bcs_1_306().bcs_brkpedact()));
+  } else {
+    chassis_.set_brake_percentage(0);
+  }
+  // 23, previously 10
+  if (ge3.has_scu_vcu_1_312() && ge3.scu_vcu_1_312().has_vcu_gearact()) {
+    switch (ge3.scu_vcu_1_312().vcu_gearact()) {
+      case Scu_vcu_1_312::VCU_GEARACT_INVALID: {
+        chassis_.set_gear_location(Chassis::GEAR_INVALID);
+      } break;
+      case Scu_vcu_1_312::VCU_GEARACT_DRIVE: {
+        chassis_.set_gear_location(Chassis::GEAR_DRIVE);
+      } break;
+      case Scu_vcu_1_312::VCU_GEARACT_NEUTRAL: {
+        chassis_.set_gear_location(Chassis::GEAR_NEUTRAL);
+      } break;
+      case Scu_vcu_1_312::VCU_GEARACT_REVERSE: {
+        chassis_.set_gear_location(Chassis::GEAR_REVERSE);
+      } break;
+      case Scu_vcu_1_312::VCU_GEARACT_PARK: {
+        chassis_.set_gear_location(Chassis::GEAR_PARKING);
+      } break;
+      default:
+        chassis_.set_gear_location(Chassis::GEAR_INVALID);
+        break;
+    }
+  } else {
+    chassis_.set_gear_location(Chassis::GEAR_INVALID);
+  }
+
+  // 11
+  if (ge3.has_scu_eps_311() && ge3.scu_eps_311().has_eps_steerangle()) {
+    chassis_.set_steering_percentage(
+        static_cast<float>(ge3.scu_eps_311().eps_steerangle() /
+                           vehicle_params_.max_steer_angle() * M_PI / 1.80));
+  } else {
+    chassis_.set_steering_percentage(0);
+  }
+
+  // 13
+  if (ge3.has_scu_epb_310() && ge3.scu_epb_310().has_epb_sysst()) {
+    chassis_.set_parking_brake(ge3.scu_epb_310().epb_sysst() ==
+                               Scu_epb_310::EPB_SYSST_APPLIED);
+  } else {
+    chassis_.set_parking_brake(false);
+  }
+
+  // 14, 15: ge3 light control
+  if (ge3.has_scu_bcm_304() && ge3.scu_bcm_304().has_bcm_highbeamst() &&
+      Scu_bcm_304::BCM_HIGHBEAMST_ACTIVE ==
+          ge3.scu_bcm_304().bcm_highbeamst()) {
+    if (chassis_.has_signal()) {
+      chassis_.mutable_signal()->set_high_beam(true);
+    }
+  } else {
+    if (chassis_.has_signal()) {
+      chassis_.mutable_signal()->set_high_beam(false);
+    }
+  }
+
+  // 16, 17
+  if (ge3.has_scu_bcm_304()) {
+    Scu_bcm_304 scu_bcm_304 = ge3.scu_bcm_304();
+    if (scu_bcm_304.has_bcm_leftturnlampst() &&
+        Scu_bcm_304::BCM_LEFTTURNLAMPST_ACTIVE ==
+            scu_bcm_304.bcm_leftturnlampst()) {
+      chassis_.mutable_signal()->set_turn_signal(
+          common::VehicleSignal::TURN_LEFT);
+    } else if (scu_bcm_304.has_bcm_rightturnlampst() &&
+               Scu_bcm_304::BCM_RIGHTTURNLAMPST_ACTIVE ==
+                   scu_bcm_304.bcm_rightturnlampst()) {
+      chassis_.mutable_signal()->set_turn_signal(
+          common::VehicleSignal::TURN_RIGHT);
+    } else {
+      chassis_.mutable_signal()->set_turn_signal(
+          common::VehicleSignal::TURN_NONE);
+    }
+  } else {
+    chassis_.mutable_signal()->set_turn_signal(
+        common::VehicleSignal::TURN_NONE);
+  }
+  // 18
+  if (ge3.has_scu_bcm_304() && ge3.scu_bcm_304().has_bcm_hornst() &&
+      Scu_bcm_304::BCM_HORNST_ACTIVE == ge3.scu_bcm_304().bcm_hornst()) {
+    chassis_.mutable_signal()->set_horn(true);
+  } else {
+    chassis_.mutable_signal()->set_horn(false);
+  }
+
+  // vin number will be written into KVDB once.
+  chassis_.mutable_vehicle_id()->set_vin("");
+  if (ge3.has_scu_1_301() && ge3.has_scu_2_302() && ge3.has_scu_3_303()) {
+    Scu_1_301 scu_1_301 = ge3.scu_1_301();
+    Scu_2_302 scu_2_302 = ge3.scu_2_302();
+    Scu_3_303 scu_3_303 = ge3.scu_3_303();
+    if (scu_2_302.has_vin00() && scu_2_302.has_vin01() &&
+        scu_2_302.has_vin02() && scu_2_302.has_vin03() &&
+        scu_2_302.has_vin04() && scu_2_302.has_vin05() &&
+        scu_2_302.has_vin06() && scu_2_302.has_vin07() &&
+        scu_3_303.has_vin08() && scu_3_303.has_vin09() &&
+        scu_3_303.has_vin10() && scu_3_303.has_vin11() &&
+        scu_3_303.has_vin12() && scu_3_303.has_vin13() &&
+        scu_3_303.has_vin14() && scu_3_303.has_vin15() &&
+        scu_1_301.has_vin16()) {
+      int n[17];
+      n[0] = scu_2_302.vin00();
+      n[1] = scu_2_302.vin01();
+      n[2] = scu_2_302.vin02();
+      n[3] = scu_2_302.vin03();
+      n[4] = scu_2_302.vin04();
+      n[5] = scu_2_302.vin05();
+      n[6] = scu_2_302.vin06();
+      n[7] = scu_2_302.vin07();
+      n[8] = scu_3_303.vin08();
+      n[9] = scu_3_303.vin09();
+      n[10] = scu_3_303.vin10();
+      n[11] = scu_3_303.vin11();
+      n[12] = scu_3_303.vin12();
+      n[13] = scu_3_303.vin13();
+      n[14] = scu_3_303.vin14();
+      n[15] = scu_3_303.vin15();
+      n[16] = scu_1_301.vin16();
+
+      char ch[17];
+      memset(&ch, '\0', sizeof(ch));
+      for (int i = 0; i < 17; i++) {
+        ch[i] = static_cast<char>(n[i]);
+      }
+      if (chassis_.has_vehicle_id()) {
+        chassis_.mutable_vehicle_id()->set_vin(ch);
+      }
+    }
+  }
+
+  // give engage_advice based on error_code and canbus feedback
+  if (chassis_error_mask_) {
+    if (chassis_.has_engage_advice()) {
+      chassis_.mutable_engage_advice()->set_advice(
+          apollo::common::EngageAdvice::DISALLOW_ENGAGE);
+      chassis_.mutable_engage_advice()->set_reason("Chassis error!");
+    }
+  } else if (chassis_.parking_brake() || CheckSafetyError(chassis_detail)) {
+    if (chassis_.has_engage_advice()) {
+      chassis_.mutable_engage_advice()->set_advice(
+          apollo::common::EngageAdvice::DISALLOW_ENGAGE);
+      chassis_.mutable_engage_advice()->set_reason(
+          "Vehicle is not in a safe state to engage!");
+    }
+  } else {
+    if (chassis_.has_engage_advice()) {
+      chassis_.mutable_engage_advice()->set_advice(
+          apollo::common::EngageAdvice::READY_TO_ENGAGE);
+    }
+  }
+Set the automatic driving mode and edit the related enable logic. In Apollo, the driving mode of the vehicle mainly includes:
+
+Fully automatic driving mode ( COMPLETE_AUTO_DRIVE): both horizontal and vertical are enabled;
+
+Horizontal automatic driving mode ( AUTO_STEER_ONLY): horizontally enabled, vertical disabled;
+
+Longitudinal autopilot mode ( AUTO_SPEED_ONLY): Disabled horizontally, enabled vertically;
+
+The control logic of the vehicle enable control signal is as follows:
+
+ErrorCode Ge3Controller::EnableAutoMode() {
+  if (driving_mode() == Chassis::COMPLETE_AUTO_DRIVE) {
+    AINFO << "already in COMPLETE_AUTO_DRIVE mode";
+    return ErrorCode::OK;
+  }
+  pc_bcs_202_->set_pc_brkpedenable(Pc_bcs_202::PC_BRKPEDENABLE_ENABLE);
+  pc_vcu_205_->set_pc_accpedenable(Pc_vcu_205::PC_ACCPEDENABLE_ENABLE);
+  pc_vcu_205_->set_pc_gearenable(Pc_vcu_205::PC_GEARENABLE_ENABLE);
+  pc_epb_203_->set_pc_epbenable(Pc_epb_203::PC_EPBENABLE_ENABLE);
+  pc_eps_204_->set_pc_steerenable(Pc_eps_204::PC_STEERENABLE_ENABLE);
+
+  can_sender_->Update();
+  const int32_t flag =
+      CHECK_RESPONSE_STEER_UNIT_FLAG | CHECK_RESPONSE_SPEED_UNIT_FLAG;
+  if (!CheckResponse(flag, true)) {
+    AERROR << "Failed to switch to COMPLETE_AUTO_DRIVE mode.";
+    Emergency();
+    set_chassis_error_code(Chassis::CHASSIS_ERROR);
+    return ErrorCode::CANBUS_ERROR;
+  }
+  set_driving_mode(Chassis::COMPLETE_AUTO_DRIVE);
+  // If the auto mode can be set normally, the harzad lamp should be off.
+  pc_bcm_201_->set_pc_hazardlampreq(Pc_bcm_201::PC_HAZARDLAMPREQ_NOREQ);
+  AINFO << "Switch to COMPLETE_AUTO_DRIVE mode ok.";
+  return ErrorCode::OK;
+}
+
+ErrorCode Ge3Controller::DisableAutoMode() {
+  ResetProtocol();
+  can_sender_->Update();
+  set_driving_mode(Chassis::COMPLETE_MANUAL);
+  set_chassis_error_code(Chassis::NO_ERROR);
+  AINFO << "Switch to COMPLETE_MANUAL OK.";
+  return ErrorCode::OK;
+}
+
+ErrorCode Ge3Controller::EnableSteeringOnlyMode() {
+  if (driving_mode() == Chassis::COMPLETE_AUTO_DRIVE ||
+      driving_mode() == Chassis::AUTO_STEER_ONLY) {
+    set_driving_mode(Chassis::AUTO_STEER_ONLY);
+    AINFO << "Already in AUTO_STEER_ONLY mode";
+    return ErrorCode::OK;
+  }
+  pc_bcs_202_->set_pc_brkpedenable(Pc_bcs_202::PC_BRKPEDENABLE_DISABLE);
+  pc_vcu_205_->set_pc_accpedenable(Pc_vcu_205::PC_ACCPEDENABLE_DISABLE);
+  pc_vcu_205_->set_pc_gearenable(Pc_vcu_205::PC_GEARENABLE_DISABLE);
+  pc_epb_203_->set_pc_epbenable(Pc_epb_203::PC_EPBENABLE_DISABLE);
+  pc_eps_204_->set_pc_steerenable(Pc_eps_204::PC_STEERENABLE_ENABLE);
+
+  can_sender_->Update();
+  if (!CheckResponse(CHECK_RESPONSE_STEER_UNIT_FLAG, true)) {
+    AERROR << "Failed to switch to AUTO_STEER_ONLY mode.";
+    Emergency();
+    set_chassis_error_code(Chassis::CHASSIS_ERROR);
+    return ErrorCode::CANBUS_ERROR;
+  }
+  set_driving_mode(Chassis::AUTO_STEER_ONLY);
+  // If the auto mode can be set normally, the harzad lamp should be off.
+  pc_bcm_201_->set_pc_hazardlampreq(Pc_bcm_201::PC_HAZARDLAMPREQ_NOREQ);
+  AINFO << "Switch to AUTO_STEER_ONLY mode ok.";
+  return ErrorCode::OK;
+}
+
+ErrorCode Ge3Controller::EnableSpeedOnlyMode() {
+  if (driving_mode() == Chassis::COMPLETE_AUTO_DRIVE ||
+      driving_mode() == Chassis::AUTO_SPEED_ONLY) {
+    set_driving_mode(Chassis::AUTO_SPEED_ONLY);
+    AINFO << "Already in AUTO_SPEED_ONLY mode";
+    return ErrorCode::OK;
+  }
+  pc_bcs_202_->set_pc_brkpedenable(Pc_bcs_202::PC_BRKPEDENABLE_ENABLE);
+  pc_vcu_205_->set_pc_accpedenable(Pc_vcu_205::PC_ACCPEDENABLE_ENABLE);
+  pc_vcu_205_->set_pc_gearenable(Pc_vcu_205::PC_GEARENABLE_ENABLE);
+  pc_epb_203_->set_pc_epbenable(Pc_epb_203::PC_EPBENABLE_ENABLE);
+  pc_eps_204_->set_pc_steerenable(Pc_eps_204::PC_STEERENABLE_DISABLE);
+
+  can_sender_->Update();
+  if (!CheckResponse(CHECK_RESPONSE_SPEED_UNIT_FLAG, true)) {
+    AERROR << "Failed to switch to AUTO_STEER_ONLY mode.";
+    Emergency();
+    set_chassis_error_code(Chassis::CHASSIS_ERROR);
+    return ErrorCode::CANBUS_ERROR;
+  }
+  set_driving_mode(Chassis::AUTO_SPEED_ONLY);
+  // If the auto mode can be set normally, the harzad lamp should be off.
+  pc_bcm_201_->set_pc_hazardlampreq(Pc_bcm_201::PC_HAZARDLAMPREQ_NOREQ);
+  AINFO << "Switch to AUTO_SPEED_ONLY mode ok.";
+  return ErrorCode::OK;
+}
+Add control signal related functions, the control signals that must be added include the vehicle's accelerator, brake pedal control, steering control, and gear control; other control signals include headlight control, horn control, turn signal control, and electronic handbrake control. The code is as follows:
+
+// NEUTRAL, REVERSE, DRIVE
+void Ge3Controller::Gear(Chassis::GearPosition gear_position) {
+  if (driving_mode() != Chassis::COMPLETE_AUTO_DRIVE &&
+      driving_mode() != Chassis::AUTO_SPEED_ONLY) {
+    AINFO << "This drive mode no need to set gear.";
+    return;
+  }
+  switch (gear_position) {
+    case Chassis::GEAR_NEUTRAL: {
+      pc_vcu_205_->set_pc_gearreq(Pc_vcu_205::PC_GEARREQ_NEUTRAL);
+      break;
+    }
+    case Chassis::GEAR_REVERSE: {
+      pc_vcu_205_->set_pc_gearreq(Pc_vcu_205::PC_GEARREQ_REVERSE);
+      break;
+    }
+    case Chassis::GEAR_DRIVE: {
+      pc_vcu_205_->set_pc_gearreq(Pc_vcu_205::PC_GEARREQ_DRIVE);
+      break;
+    }
+    case Chassis::GEAR_PARKING: {
+      pc_vcu_205_->set_pc_gearreq(Pc_vcu_205::PC_GEARREQ_PARK);
+      break;
+    }
+    case Chassis::GEAR_LOW: {
+      pc_vcu_205_->set_pc_gearreq(Pc_vcu_205::PC_GEARREQ_INVALID);
+      break;
+    }
+    case Chassis::GEAR_NONE: {
+      pc_vcu_205_->set_pc_gearreq(Pc_vcu_205::PC_GEARREQ_INVALID);
+      break;
+    }
+    case Chassis::GEAR_INVALID: {
+      AERROR << "Gear command is invalid!";
+      pc_vcu_205_->set_pc_gearreq(Pc_vcu_205::PC_GEARREQ_INVALID);
+      break;
+    }
+    default: {
+      pc_vcu_205_->set_pc_gearreq(Pc_vcu_205::PC_GEARREQ_INVALID);
+      break;
+    }
+  }
+}
+
+// brake with new acceleration
+// acceleration:0.00~99.99, unit:
+// acceleration:0.0 ~ 7.0, unit:m/s^2
+// acceleration_spd:60 ~ 100, suggest: 90
+// -> pedal
+void Ge3Controller::Brake(double pedal) {
+  // Update brake value based on mode
+  if (driving_mode() != Chassis::COMPLETE_AUTO_DRIVE &&
+      driving_mode() != Chassis::AUTO_SPEED_ONLY) {
+    AINFO << "The current drive mode does not need to set acceleration.";
+    return;
+  }
+  pc_bcs_202_->set_pc_brkpedreq(pedal);
+}
+
+// drive with old acceleration
+// gas:0.00~99.99 unit:
+void Ge3Controller::Throttle(double pedal) {
+  if (driving_mode() != Chassis::COMPLETE_AUTO_DRIVE &&
+      driving_mode() != Chassis::AUTO_SPEED_ONLY) {
+    AINFO << "The current drive mode does not need to set acceleration.";
+    return;
+  }
+  pc_vcu_205_->set_pc_accpedreq(pedal);
+}
+
+// ge3 default, -470 ~ 470, left:+, right:-
+// need to be compatible with control module, so reverse
+// steering with old angle speed
+// angle:-99.99~0.00~99.99, unit:, left:-, right:+
+void Ge3Controller::Steer(double angle) {
+  if (!(driving_mode() == Chassis::COMPLETE_AUTO_DRIVE ||
+        driving_mode() == Chassis::AUTO_STEER_ONLY)) {
+    AINFO << "The current driving mode does not need to set steer.";
+    return;
+  }
+  const double real_angle =
+      vehicle_params_.max_steer_angle() / M_PI * 180 * angle / 100.0;
+  pc_eps_204_->set_pc_steerangreq(real_angle)->set_pc_steerspdreq(500);
+}
+
+// drive with acceleration/deceleration
+// acc:-7.0 ~ 5.0, unit:m/s^2
+void Ge3Controller::Acceleration(double acc) {
+  if (driving_mode() != Chassis::COMPLETE_AUTO_DRIVE &&
+      driving_mode() != Chassis::AUTO_SPEED_ONLY) {
+    AINFO << "The current drive mode does not need to set acceleration.";
+    return;
+  }
+  // None
+}
+
+// steering with new angle speed
+// angle:-99.99~0.00~99.99, unit:, left:-, right:+
+// angle_spd:0.00~99.99, unit:deg/s
+void Ge3Controller::Steer(double angle, double angle_spd) {
+  if (driving_mode() != Chassis::COMPLETE_AUTO_DRIVE &&
+      driving_mode() != Chassis::AUTO_STEER_ONLY) {
+    AINFO << "The current driving mode does not need to set steer.";
+    return;
+  }
+  const double real_angle =
+      vehicle_params_.max_steer_angle() / M_PI * 180 * angle / 100.0;
+  const double real_angle_spd =
+      ProtocolData<::apollo::canbus::ChassisDetail>::BoundedValue(
+          vehicle_params_.min_steer_angle_rate() / M_PI * 180,
+          vehicle_params_.max_steer_angle_rate() / M_PI * 180,
+          vehicle_params_.max_steer_angle_rate() / M_PI * 180 * angle_spd /
+              100.0);
+  pc_eps_204_->set_pc_steerangreq(real_angle)
+      ->set_pc_steerspdreq(static_cast<int>(real_angle_spd));
+}
+
+void Ge3Controller::SetEpbBreak(const ControlCommand& command) {
+  if (command.parking_brake()) {
+    pc_epb_203_->set_pc_epbreq(Pc_epb_203::PC_EPBREQ_APPLY);
+  } else {
+    pc_epb_203_->set_pc_epbreq(Pc_epb_203::PC_EPBREQ_RELEASE);
+  }
+}
+
+void Ge3Controller::SetBeam(const ControlCommand& command) {
+  if (command.signal().high_beam()) {
+    pc_bcm_201_->set_pc_lowbeamreq(Pc_bcm_201::PC_LOWBEAMREQ_NOREQ);
+    pc_bcm_201_->set_pc_highbeamreq(Pc_bcm_201::PC_HIGHBEAMREQ_REQ);
+  } else if (command.signal().low_beam()) {
+    pc_bcm_201_->set_pc_lowbeamreq(Pc_bcm_201::PC_LOWBEAMREQ_REQ);
+    pc_bcm_201_->set_pc_highbeamreq(Pc_bcm_201::PC_HIGHBEAMREQ_NOREQ);
+  } else {
+    pc_bcm_201_->set_pc_lowbeamreq(Pc_bcm_201::PC_LOWBEAMREQ_NOREQ);
+    pc_bcm_201_->set_pc_highbeamreq(Pc_bcm_201::PC_HIGHBEAMREQ_NOREQ);
+  }
+}
+
+void Ge3Controller::SetHorn(const ControlCommand& command) {
+  if (command.signal().horn()) {
+    pc_bcm_201_->set_pc_hornreq(Pc_bcm_201::PC_HORNREQ_REQ);
+  } else {
+    pc_bcm_201_->set_pc_hornreq(Pc_bcm_201::PC_HORNREQ_NOREQ);
+  }
+}
+
+void Ge3Controller::SetTurningSignal(const ControlCommand& command) {
+  // Set Turn Signal
+  auto signal = command.signal().turn_signal();
+  if (signal == common::VehicleSignal::TURN_LEFT) {
+    pc_bcm_201_->set_pc_leftturnlampreq(Pc_bcm_201::PC_LEFTTURNLAMPREQ_REQ);
+    pc_bcm_201_->set_pc_rightturnlampreq(Pc_bcm_201::PC_RIGHTTURNLAMPREQ_NOREQ);
+  } else if (signal == common::VehicleSignal::TURN_RIGHT) {
+    pc_bcm_201_->set_pc_leftturnlampreq(Pc_bcm_201::PC_LEFTTURNLAMPREQ_NOREQ);
+    pc_bcm_201_->set_pc_rightturnlampreq(Pc_bcm_201::PC_RIGHTTURNLAMPREQ_REQ);
+  } else {
+    pc_bcm_201_->set_pc_leftturnlampreq(Pc_bcm_201::PC_LEFTTURNLAMPREQ_NOREQ);
+    pc_bcm_201_->set_pc_rightturnlampreq(Pc_bcm_201::PC_RIGHTTURNLAMPREQ_NOREQ);
+  }
+}
+Add CheckResponselogic, the Apollo program adds monitoring of whether the bottom layer of the vehicle is in the automatic driving mode, that is, whether the driving mode feedback of the vehicle's lateral, drive, and brake modules is in the automatic driving state. If within a CheckResponsecycle, a certain module of the vehicle drives the module When the feedback is in takeover or manual driving mode, Apollo will control the vehicle to enable emergency stop mode ( Emergency), that is, all modules are controlled to manual mode to ensure safety when controlling the vehicle. Different vehicle CheckResponsecycles may be different, and developers need to retry_numset the checkcycle according to the situation . Developers can map the 3 driving mode feedback messages with apollo without changing the original check code scheme chassis_detail:
+
+is_eps_online->转向模式反馈信号
+
+is_vcu_online->驱动模式反馈信号
+
+is_esp_online->制动模式反馈信号
+
+In the apollo/modules/canbus/vehicle/ge3/protocol/scu_eps_311.ccfile, add the following code:
+
+chassis->mutable_check_response()->set_is_eps_online(eps_drvmode(bytes, length) == 3);
+In the apollo/modules/canbus/vehicle/ge3/protocol/scu_vcu_1_312.ccfile, add the following code:
+
+chassis->mutable_check_response()->set_is_vcu_online(vcu_drvmode(bytes, length) == 3);
+In the apollo/modules/canbus/vehicle/ge3/protocol/scu_bcs_1_306.ccfile, add the following code:
+
+chassis->mutable_check_response()->set_is_esp_online(bcs_drvmode(bytes, length) == 3);
+CheckResponseThe implementation code is as follows:
+
+bool Ge3Controller::CheckResponse(const int32_t flags, bool need_wait) {
+  int32_t retry_num = 20;
+  ChassisDetail chassis_detail;
+  bool is_eps_online = false;
+  bool is_vcu_online = false;
+  bool is_esp_online = false;
+
+  do {
+    if (message_manager_->GetSensorData(&chassis_detail) != ErrorCode::OK) {
+      AERROR_EVERY(100) << "get chassis detail failed.";
+      return false;
+    }
+    bool check_ok = true;
+    if (flags & CHECK_RESPONSE_STEER_UNIT_FLAG) {
+      is_eps_online = chassis_detail.has_check_response() &&
+                      chassis_detail.check_response().has_is_eps_online() &&
+                      chassis_detail.check_response().is_eps_online();
+      check_ok = check_ok && is_eps_online;
+    }
+
+    if (flags & CHECK_RESPONSE_SPEED_UNIT_FLAG) {
+      is_vcu_online = chassis_detail.has_check_response() &&
+                      chassis_detail.check_response().has_is_vcu_online() &&
+                      chassis_detail.check_response().is_vcu_online();
+      is_esp_online = chassis_detail.has_check_response() &&
+                      chassis_detail.check_response().has_is_esp_online() &&
+                      chassis_detail.check_response().is_esp_online();
+      check_ok = check_ok && is_vcu_online && is_esp_online;
+    }
+    if (check_ok) {
+      return true;
+    }
+    AINFO << "Need to check response again.";
+    if (need_wait) {
+      --retry_num;
+      std::this_thread::sleep_for(
+          std::chrono::duration<double, std::milli>(20));
+    }
+  } while (need_wait && retry_num);
+
+  AINFO << "check_response fail: is_eps_online:" << is_eps_online
+        << ", is_vcu_online:" << is_vcu_online
+        << ", is_esp_online:" << is_esp_online;
+  return false;
+}
+4. Modify the chassis speed feedback protocol to convert the speed feedback unit from km/h to m/s
+The default vehicle speed feedback amount used in the Apollo system is m/sthat the chassis speed information is very important to Apollo. This data needs to be collected in vehicle calibration, control, planning, etc. Therefore, developers should focus on checking the speed feedback unit when developing adaptive code. A vehicle speed km/hconverted m/swhen the feedback signal by the vehicle speed 3.6can be. Find the message of Ge3 vehicle speed feedback under the file apollo/modules/canbus/vehicle/ge3/protocol/scu_bcs_2_307.cc, and the feedback speed message is Scubcs2307::bcs_vehspd{}as shown in the figure below: speed_transfer
+
+5. Register a new vehicle
+In modules/canbus/vehicle/vehicle_factory.ccregistering a new vehicle, the new class in the file as follows: register_ge3 Add the header file add_head_file to add dependent libraries in BUILD apollo/modules/canbus/vehicle/BUILDadded within the file ge3_vehicle_factorydependencies. add_build_depend
+
+6. Update the configuration file
+In the modules/canbus/proto/vehicle_parameter.protoAdd GE3 vehicle branch within the file. register1_ge3 After modules/canbus/conf/canbus_conf.pb.txtupdating the configuration, change to the canbus communication program of ge3. register2_ge3
+
+Third, the method of open-loop verification of DBC for vehicle chassis
+1. Open loop test
+After the vehicle chassis DBC is determined, an open loop test is performed on the signal defined in the DBC. The main purpose of the open-loop test is to test whether the vehicle's wire control signal is consistent with the actual function of the vehicle, to test whether the vehicle's steering, acceleration and deceleration performance response meets the vehicle's wire control requirements, and to test whether the vehicle's takeover logic meets the requirements.
+
+In the open-loop single side of the chassis, the developer should test the key DBC requirements mentioned above, such as the independence of vehicle horizontal and vertical enable, the independence of horizontal and vertical takeover, whether each control signal meets the control requirements and control boundaries, Whether the feedback signal is correct. In terms of performance, whether the steering and acceleration/deceleration delay of the control signal meets the apollo control performance requirements, and whether the overshoot error is within the range of the online control list. Developers are requested to test the control signals according to the performance requirements in the wire control list.
+
+2. Teleop chassis joint debugging test
+Chassis joint debugging test is to test whether Apollo sends control signals (such as acceleration/deceleration/steering/enable, etc.) can accurately control the vehicle after canbus communication between Apollo and the vehicle, and to test the vehicle’s chassis feedback signal (such as the current pedal percentage) Whether the feedback/current corner feedback/enable feedback/takeover feedback, etc.) is related to the actual state of the vehicle, verify that the control commands issued by Apollo can be accurately executed by the vehicle chassis.
+
+Introduction to teleop test tool
+Apollo provides a teleop test tool for developers, apollo/modules/canbus/tools/teleop.ccenter in the term
+
+bash scripts/canbus_teleop.sh
+You can enter the teleop interface, as shown in the figure below:
+
+teleop
+
+Press the hbutton brings up a help screen shown in FIG., The method can query Teleop tools, simple instructions under control of the respective teleop described below.
+
+Set Action executes Apollo's enabling control of the vehicle:
+Press the mand 0key combination to execute the reset command and the vehicle exits the automatic driving mode; press the mand 1key combination to execute the start command and the vehicle enters the automatic driving mode.
+
+Set Gear means to set the gear, press gand 数字combination to set the corresponding gear:
+Press g+ 0to engage N gear (neutral gear); Press g+ 1to engage D gear (forward gear); Press g+ 2to engage R gear (reverse gear); Press g+ 3to engage P gear (parking gear); other gear control commands temporarily No, according to our DBC requirements, these are the general vehicle control gear commands.
+
+Throttle/Speed ​​up means that each time the accelerator pedal is increased by 2%, the vehicle will accelerate
+Press the wbutton to increase the accelerator pedal 2%, to accelerate the vehicle. If the brake command has been executed, press to wreduce the brake pedal amount by 2%. The control range of the accelerator pedal amount is 0~100%, that is, when the accelerator pedal is fully depressed at 100%. Each press default wkey once, the amount of accelerator pedal 2%, this value developers can real tests, modified, based on experience, each change of 2% is appropriate.
+
+注意：请先用teleop执行挂D档后再执行加油命令，请在开放场地测试，注意安全!
+
+Set Throttle Set the accelerator pedal percentage
+Press t+ 数字to directly set the specific accelerator pedal percentage, and the percentage that can be set on the accelerator pedal is 0~100. If t20 is executed, it means that the current accelerator pedal amount is directly set to 20%, and the brake pedal percentage is set to 0. This is consistent with the actual driving logic. If the accelerator pedal is depressed, the brake pedal cannot be depressed.
+
+注意：直接设置油门踏板百分比时，注意每次不要设置太大，开放场地测试，注意安全！请在车辆为D档状态下执行该命令.
+
+Brake/Speed ​​down means that each time the accelerator pedal is increased by 2%, the vehicle will accelerate
+Press the sbutton to increase the percentage of the brake pedal, the vehicle is decelerated. If the current instruction has been executed throttle acceleration, press the skey represents the percentage decrease of the accelerator pedal.
+
+注意：请先用teleop执行挂D档后再执行加油命令，请在开放场地测试，注意安全!
+
+Set Brake Set brake pedal percentage
+Press b+ 数字to directly set the specific brake pedal percentage. The percentage of the brake pedal can be set from 0 to 100. If b20 is executed, it means to directly set the current brake pedal amount to 20%, and set the accelerator pedal percentage to 0. This is consistent with the actual driving logic. If the brake pedal is stepped on, the accelerator pedal cannot be stepped on.
+
+注意：直接设置油门踏板百分比时，注意每次不要设置太大，开放场地测试，注意安全！请在车辆为D档状态下执行该命令.
+
+Steer LEFT means 2% every time the steering wheel turns to the left
+Press the abutton to turn left each represent 2% of the maximum steering angle, the rotation angle should particularly be multiplied by 2% in terms of the maximum steering angle of the vehicle is provided. The instruction can be executed when the vehicle is stationary or after the vehicle is started.
+
+Steer RIGHT means that the steering wheel turns 2% to the right every time
+Press sbutton each represents a right turn of the steering wheel 2% of the maximum angle, the specific angle of rotation should be multiplied by 2% in terms of the maximum steering angle of the vehicle is provided. The instruction can be executed when the vehicle is stationary or after the vehicle is started.
+
+Parking Brake Turn on the electronic handbrake
+Press the Pkey (note the capital P) may be manually controlled vehicle electronic parking brake switch. This function is realized according to whether the vehicle provides the control interface of the electronic handbrake.
+
+注意：执行电子手刹开启或释放时，请将车辆用teleop设置为P档状态.
+
+Emergency Stop
+Press the Ekey (note the capital E) can make an emergency stop of the vehicle, the default implementation of a 50% brake. It is recommended that developers use this function as little as possible during testing, as the body feels poor, and pay more attention to the surrounding conditions when debugging the vehicle. In the event of an emergency, use an external brake pedal to manually take over the vehicle in time.
+
+Introduction to diagnostic tools
+After understanding the basic operations of teleop, the developer executes specific control commands on the vehicle according to the corresponding instructions, and then uses Apollo's visual monitoring tool diagnostic.sh（Apollo3.0及以前版本）/cyber_monitorto view the current feedback signal of the vehicle to confirm whether the execution result of the vehicle is correct after the control is issued. A visual monitoring tool is provided in Apollo, which can be used to monitor the chassis chassisand chassis_detailinformation, by executing
+
+bash scripts/diagnostic.sh    //Apollo3.0及以前版本
+cyber_monitor                 //Apollo3.5版本
+In the apollo/modules/canbus/conf/canbus.conffile: Modify the configuration --noenable_chassis_detail_pubto --enable_chassis_detail_pubindicate that when opening the chassis_detailchassis details, you can view the original information of each frame of the chassis feedback signal. Modify the configuration --receive_guardianto --noreceive_guardianturn off the guardian mode and enter the canbus debugging mode, so that the vehicle can be controlled during teleop. As shown in the figure below, the canbus_confconfiguration file is modified . canbus_conf
+
+Open diagnosticor the cyber_monitorinterface is as follows
+
+cyber_monitor
+
+You can see chassisand chassis_detailhave data, the frequency is about 100Hz. chassisThe following data is mainly the actual speed of the vehicle, the feedback of the actual pedal percentage, the actual steering wheel angle percentage, the actual gear feedback and other information, which chassis_detailis all the information of the feedback message that the chassis uploads to apollo (that is, apollo receives all the messages from the chassis). The chassisinformation is shown in the figure below
+
+chassis
+
+The chassis_detailinformation is shown in the figure below
+
+chassis_detail1 chassis_detail
